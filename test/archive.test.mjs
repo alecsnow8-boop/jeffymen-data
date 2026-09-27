@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
+  assertCompleteArchive,
   buildSeasonArchive,
   trimDraft,
   trimLeague,
@@ -75,4 +77,45 @@ test("buildSeasonArchive assembles a schema 1 archive", () => {
   assert.deepEqual(a.brackets, { winners: [{ m: 1 }], losers: [] });
   assert.equal(a.draft, null);
   assert.equal(a.fetchedAt, "2026-09-27T00:00:00Z");
+});
+
+const complete = () => ({
+  season: "2025",
+  status: "complete",
+  settings: { playoffWeekStart: 3, playoffTeams: 2, playoffRoundType: 0, startWeek: 1, divisions: {} },
+  users: [{ userId: "u1" }, { userId: "u2" }],
+  rosters: [{ rosterId: 1, ownerId: "u1" }, { rosterId: 2, ownerId: "u2" }],
+  weeks: {
+    1: [{ rosterId: 1, matchupId: 1, points: 100 }, { rosterId: 2, matchupId: 1, points: 90 }],
+    2: [{ rosterId: 1, matchupId: 1, points: 100 }, { rosterId: 2, matchupId: 1, points: 90 }],
+    3: [{ rosterId: 1, matchupId: 1, points: 100 }, { rosterId: 2, matchupId: 1, points: 90 }],
+  },
+  brackets: { winners: [{ m: 1, r: 1, p: 1, t1: 1, t2: 2, w: 1, l: 2 }], losers: [] },
+});
+
+test("assertCompleteArchive accepts a season with every roster in every regular week, every playoff week and a decided final", () => {
+  const a = complete();
+  assert.equal(assertCompleteArchive(a), a);
+});
+
+test("assertCompleteArchive refuses holes: a roster missing from a regular week, an absent playoff week, no decided final, no users", () => {
+  const noRow = complete();
+  noRow.weeks[2] = noRow.weeks[2].slice(0, 1);
+  assert.throws(() => assertCompleteArchive(noRow), /week 2 .*roster 2/);
+  const noPlayoffWeek = complete();
+  delete noPlayoffWeek.weeks[3];
+  assert.throws(() => assertCompleteArchive(noPlayoffWeek), /week 3/);
+  const noFinal = complete();
+  noFinal.brackets.winners = [{ m: 1, r: 1, p: 1, t1: 1, t2: 2 }];
+  assert.throws(() => assertCompleteArchive(noFinal), /final/);
+  const noUsers = complete();
+  noUsers.users = [];
+  assert.throws(() => assertCompleteArchive(noUsers), /users/);
+});
+
+test("the archives the robot has published pass the completeness check", () => {
+  for (const y of ["2023", "2024", "2025"]) {
+    const a = JSON.parse(readFileSync(new URL(`../docs/seasons/${y}.json`, import.meta.url), "utf8"));
+    assert.equal(assertCompleteArchive(a), a, y);
+  }
 });

@@ -2,8 +2,8 @@
 // current draft and the player map, and write the manifest. The site reads only these files.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { getJson } from "../lib/sleeper.mjs";
-import { buildSeasonArchive, trimDraft, trimRosters, trimRows, weeksToArchive } from "../lib/archive.mjs";
+import { getJson, getJsonRequired } from "../lib/sleeper.mjs";
+import { assertCompleteArchive, buildSeasonArchive, trimDraft, trimRosters, trimRows, weeksToArchive } from "../lib/archive.mjs";
 import { collectPlayerIds, slimPlayers } from "../lib/players.mjs";
 
 const LEAGUE_ID = process.env.LEAGUE_ID ?? "1389693644998471680";
@@ -21,22 +21,25 @@ const readJson = async (rel) => JSON.parse(await readFile(at(rel), "utf8"));
 async function fetchSeason(league) {
   const id = league.league_id;
   const weeks = weeksToArchive(league);
+  // A complete league never lacks these. A 404 is a fault, not an empty week: the run fails rather than freezing a hole.
   const [users, rosters, drafts, winners, losers] = await Promise.all([
-    getJson(`/league/${id}/users`),
-    getJson(`/league/${id}/rosters`),
-    getJson(`/league/${id}/drafts`),
-    getJson(`/league/${id}/winners_bracket`),
-    getJson(`/league/${id}/losers_bracket`),
+    getJsonRequired(`/league/${id}/users`),
+    getJsonRequired(`/league/${id}/rosters`),
+    getJsonRequired(`/league/${id}/drafts`),
+    getJsonRequired(`/league/${id}/winners_bracket`),
+    getJsonRequired(`/league/${id}/losers_bracket`),
   ]);
   const matchups = {};
   const transactions = {};
   for (const w of weeks) {
-    matchups[w] = (await getJson(`/league/${id}/matchups/${w}`)) ?? [];
-    transactions[w] = (await getJson(`/league/${id}/transactions/${w}`)) ?? [];
+    matchups[w] = await getJsonRequired(`/league/${id}/matchups/${w}`);
+    transactions[w] = await getJsonRequired(`/league/${id}/transactions/${w}`);
   }
   const draft = Array.isArray(drafts) && drafts[0] ? drafts[0] : null;
-  const picks = draft ? (await getJson(`/draft/${draft.draft_id}/picks`)) ?? [] : [];
-  return buildSeasonArchive({ league, users, rosters, matchups, draft, picks, winners, losers, transactions, fetchedAt: new Date().toISOString() });
+  const picks = draft ? await getJsonRequired(`/draft/${draft.draft_id}/picks`) : [];
+  return assertCompleteArchive(
+    buildSeasonArchive({ league, users, rosters, matchups, draft, picks, winners, losers, transactions, fetchedAt: new Date().toISOString() }),
+  );
 }
 
 async function main() {
@@ -61,7 +64,7 @@ async function main() {
       const rel = `seasons/${season}.json`;
       let archive;
       if (existsSync(at(rel)) && !FORCE) {
-        archive = await readJson(rel);
+        archive = assertCompleteArchive(await readJson(rel));
         log(`${season}: kept existing archive`);
       } else {
         archive = await fetchSeason(league);

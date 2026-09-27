@@ -11,4 +11,6 @@ Public Sleeper data for the League of Extraordinary Jeffymen, written by a sched
 
 Run locally: `npm test`, then `npm run build` (add `--force` to rewrite complete seasons). The workflow runs Tuesdays at 12:00 UTC and on demand, and commits `docs/` when anything changed.
 
+The build refuses to freeze a season with holes (a roster missing from a regular-season week, a playoff week absent, no decided final) and treats a 404 on a complete league's data as a fault, so a bad Sleeper day fails the run instead of becoming the permanent archive.
+
 No real names, no form responses, nothing private. Sleeper usernames and team names only.
